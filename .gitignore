@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Data
+data/*.db
+data/*.db-journal
+data/raw/*.csv
+
+# OS / IDE
+.DS_Store
+.vscode/
+.idea/
+
+# uv
+.python-version
