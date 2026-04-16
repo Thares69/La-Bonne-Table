@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import sqlite3
 from pathlib import Path
+from typing import BinaryIO
 
 import pandas as pd
 
@@ -20,16 +21,20 @@ from la_bonne_table.db import DB_PATH, connect, init_schema
 
 RAW_DIR = Path(__file__).resolve().parents[2] / "data" / "raw"
 
+CsvSource = Path | BinaryIO
 
-def _read_csv(path: Path, required: list[str]) -> pd.DataFrame:
-    if not path.exists():
-        raise FileNotFoundError(f"CSV manquant : {path}")
-    df = pd.read_csv(path)
+
+def _read_csv(source: CsvSource, required: list[str], name: str = "") -> pd.DataFrame:
+    if isinstance(source, Path):
+        if not source.exists():
+            raise FileNotFoundError(f"CSV manquant : {source}")
+        name = name or source.name
+    df = pd.read_csv(source)
     missing = set(required) - set(df.columns)
     if missing:
-        raise ValueError(f"{path.name} : colonnes manquantes {sorted(missing)}")
+        raise ValueError(f"{name} : colonnes manquantes {sorted(missing)}")
     if df.empty:
-        raise ValueError(f"{path.name} : fichier vide")
+        raise ValueError(f"{name} : fichier vide")
     return df
 
 
@@ -45,10 +50,12 @@ def _known_items(conn: sqlite3.Connection) -> set[str]:
     return {r["item_id"] for r in conn.execute("SELECT item_id FROM items")}
 
 
-def load_items(conn: sqlite3.Connection, csv_path: Path) -> int:
-    df = _read_csv(csv_path, ["item_id", "name", "category", "unit_cost", "sell_price"])
+def load_items(
+    conn: sqlite3.Connection, source: CsvSource, name: str = "items.csv",
+) -> int:
+    df = _read_csv(source, ["item_id", "name", "category", "unit_cost", "sell_price"], name)
     if (df["unit_cost"] < 0).any() or (df["sell_price"] < 0).any():
-        raise ValueError(f"{csv_path.name} : unit_cost/sell_price négatif")
+        raise ValueError(f"{name} : unit_cost/sell_price négatif")
     df = df.drop_duplicates(subset=["item_id"], keep="last")
 
     conn.executemany(
@@ -62,9 +69,11 @@ def load_items(conn: sqlite3.Connection, csv_path: Path) -> int:
     return len(df)
 
 
-def load_calendar(conn: sqlite3.Connection, csv_path: Path) -> int:
-    df = _read_csv(csv_path, ["date", "is_open", "notes"])
-    _validate_dates(df, "date", csv_path.name)
+def load_calendar(
+    conn: sqlite3.Connection, source: CsvSource, name: str = "calendar.csv",
+) -> int:
+    df = _read_csv(source, ["date", "is_open", "notes"], name)
+    _validate_dates(df, "date", name)
     df = df.drop_duplicates(subset=["date"], keep="last")
     df = df.copy()
     df["notes"] = df["notes"].fillna("")
@@ -78,12 +87,15 @@ def load_calendar(conn: sqlite3.Connection, csv_path: Path) -> int:
     return len(df)
 
 
-def load_sales(conn: sqlite3.Connection, csv_path: Path) -> int:
+def load_sales(
+    conn: sqlite3.Connection, source: CsvSource, name: str = "sales.csv",
+) -> int:
     df = _read_csv(
-        csv_path,
+        source,
         ["date", "ticket_id", "item_id", "quantity", "unit_price", "total"],
+        name,
     )
-    _validate_dates(df, "date", csv_path.name)
+    _validate_dates(df, "date", name)
 
     # Filtrage des lignes aberrantes
     df = df[(df["quantity"] > 0) & (df["unit_price"] >= 0) & (df["total"] >= 0)]
@@ -97,7 +109,7 @@ def load_sales(conn: sqlite3.Connection, csv_path: Path) -> int:
     unknown = set(df["item_id"]) - _known_items(conn)
     if unknown:
         raise ValueError(
-            f"{csv_path.name} : item_id inconnus dans items : {sorted(unknown)[:5]}"
+            f"{name} : item_id inconnus dans items : {sorted(unknown)[:5]}"
         )
 
     conn.executemany(
@@ -111,23 +123,26 @@ def load_sales(conn: sqlite3.Connection, csv_path: Path) -> int:
     return len(df)
 
 
-def load_stock(conn: sqlite3.Connection, csv_path: Path) -> int:
+def load_stock(
+    conn: sqlite3.Connection, source: CsvSource, name: str = "stock.csv",
+) -> int:
     df = _read_csv(
-        csv_path,
+        source,
         ["date", "item_id", "qty_open", "qty_received", "qty_close", "waste"],
+        name,
     )
-    _validate_dates(df, "date", csv_path.name)
+    _validate_dates(df, "date", name)
 
     for col in ["qty_open", "qty_received", "qty_close", "waste"]:
         if (df[col] < 0).any():
-            raise ValueError(f"{csv_path.name} : {col} négatif")
+            raise ValueError(f"{name} : {col} négatif")
 
     df = df.drop_duplicates(subset=["date", "item_id"], keep="last")
 
     unknown = set(df["item_id"]) - _known_items(conn)
     if unknown:
         raise ValueError(
-            f"{csv_path.name} : item_id inconnus dans items : {sorted(unknown)[:5]}"
+            f"{name} : item_id inconnus dans items : {sorted(unknown)[:5]}"
         )
 
     conn.executemany(
@@ -141,6 +156,13 @@ def load_stock(conn: sqlite3.Connection, csv_path: Path) -> int:
     return len(df)
 
 
+def _purge_tables(conn: sqlite3.Connection) -> None:
+    """Purge toutes les tables dans l'ordre inverse des FK."""
+    for table in ("sales", "stock", "calendar", "items"):
+        conn.execute(f"DELETE FROM {table}")
+    conn.commit()
+
+
 def ingest_all(
     raw_dir: Path | str = RAW_DIR,
     db_path: Path | str = DB_PATH,
@@ -150,10 +172,7 @@ def ingest_all(
     conn = connect(db_path)
     try:
         init_schema(conn)
-        # Purge dans l'ordre inverse des FK avant réinsertion
-        for table in ("sales", "stock", "calendar", "items"):
-            conn.execute(f"DELETE FROM {table}")
-        conn.commit()
+        _purge_tables(conn)
 
         counts = {
             "items": load_items(conn, raw_dir / "items.csv"),
@@ -163,6 +182,29 @@ def ingest_all(
         }
     finally:
         conn.close()
+    return counts
+
+
+def ingest_uploaded(
+    conn: sqlite3.Connection, files: dict[str, BinaryIO],
+) -> dict[str, int]:
+    """Ingest depuis des file-like objects (ex. Streamlit uploads).
+
+    ``files`` doit contenir les clés ``items``, ``sales``, ``stock``.
+    La clé ``calendar`` est optionnelle.
+    """
+    for f in files.values():
+        f.seek(0)
+
+    init_schema(conn)
+    _purge_tables(conn)
+
+    counts: dict[str, int] = {}
+    counts["items"] = load_items(conn, files["items"], "items.csv")
+    if "calendar" in files:
+        counts["calendar"] = load_calendar(conn, files["calendar"], "calendar.csv")
+    counts["sales"] = load_sales(conn, files["sales"], "sales.csv")
+    counts["stock"] = load_stock(conn, files["stock"], "stock.csv")
     return counts
 
 

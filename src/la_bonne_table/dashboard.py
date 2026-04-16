@@ -13,6 +13,7 @@ import streamlit as st
 
 from la_bonne_table import kpi, rules
 from la_bonne_table.db import DB_PATH, connect, init_schema
+from la_bonne_table.ingest import ingest_uploaded
 
 # ---------------------------------------------------------------------------
 # Config
@@ -101,9 +102,12 @@ def render_sidebar(conn):
 
     page = st.sidebar.radio(
         "Navigation",
-        ["Accueil", "Ventes", "Stock"],
+        ["Accueil", "Ventes", "Stock", "Import"],
         label_visibility="collapsed",
     )
+
+    if page == "Import":
+        return page, None, None
 
     st.sidebar.divider()
 
@@ -373,24 +377,82 @@ def render_stock(conn, start, end):
 
 
 # ---------------------------------------------------------------------------
+# Page : Import
+# ---------------------------------------------------------------------------
+
+
+def render_import():
+    st.header("Import de données")
+    st.caption("Charger un jeu de fichiers CSV pour alimenter la base")
+
+    if "import_counts" in st.session_state:
+        counts = st.session_state.pop("import_counts")
+        st.success("Import réussi !")
+        cols = st.columns(len(counts))
+        for col, (table, n) in zip(cols, counts.items(), strict=False):
+            col.metric(table, f"{n} lignes")
+        st.divider()
+
+    st.warning("L'import remplace intégralement les données existantes.")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        items_file = st.file_uploader("items.csv", type="csv", key="up_items")
+        sales_file = st.file_uploader("sales.csv", type="csv", key="up_sales")
+    with col2:
+        stock_file = st.file_uploader("stock.csv", type="csv", key="up_stock")
+        calendar_file = st.file_uploader(
+            "calendar.csv (optionnel)", type="csv", key="up_calendar",
+        )
+
+    required = {"items": items_file, "sales": sales_file, "stock": stock_file}
+    missing = [name for name, f in required.items() if f is None]
+
+    if missing:
+        st.info(
+            "Fichiers manquants : "
+            + ", ".join(f"**{m}.csv**" for m in missing)
+        )
+        return
+
+    if st.button("Lancer l'import", type="primary"):
+        files: dict = {k: v for k, v in required.items()}
+        if calendar_file:
+            files["calendar"] = calendar_file
+
+        try:
+            conn = connect()
+            init_schema(conn)
+            counts = ingest_uploaded(conn, files)
+            conn.close()
+            st.session_state["import_counts"] = counts
+            st.rerun()
+        except (ValueError, FileNotFoundError) as e:
+            st.error(f"Erreur d'import : {e}")
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
 
 def main():
     conn = _open_conn()
+
     if conn is None:
-        st.error(
-            "Base introuvable. Lance d'abord :\n\n"
-            "```bash\n"
-            "uv run python scripts/seed_data.py\n"
-            "uv run python -m la_bonne_table.ingest\n"
-            "```"
-        )
+        st.sidebar.markdown("### La Bonne Table")
+        st.sidebar.caption("Tableau de bord restaurant")
+        st.sidebar.radio("Navigation", ["Import"], label_visibility="collapsed")
+        render_import()
         return
 
     try:
         page, start, end = render_sidebar(conn)
+
+        if page == "Import":
+            render_import()
+            return
+
         if start is None or end is None:
             st.info("S\u00e9lectionne une p\u00e9riode valide dans la sidebar.")
             return

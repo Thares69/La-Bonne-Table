@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from io import BytesIO
 from pathlib import Path
 
 import pytest
@@ -140,3 +141,92 @@ def test_missing_file_raises(raw_dir, tmp_path):
     (raw_dir / "sales.csv").unlink()
     with pytest.raises(FileNotFoundError):
         ingest.ingest_all(raw_dir, tmp_path / "test.db")
+
+
+# ---------------------------------------------------------------------------
+# ingest_uploaded (file-like objects)
+# ---------------------------------------------------------------------------
+
+ITEMS_BIN = (
+    b"item_id,name,category,unit_cost,sell_price\n"
+    b"A,Item A,plat,4.0,10.0\n"
+    b"B,Item B,boisson,2.0,6.0\n"
+)
+CALENDAR_BIN = b"date,is_open,notes\n2026-01-01,1,\n2026-01-02,0,ferme\n"
+SALES_BIN = (
+    b"date,ticket_id,item_id,quantity,unit_price,total\n"
+    b"2026-01-01,T1,A,2,10.0,20.0\n"
+    b"2026-01-01,T1,B,1,6.0,6.0\n"
+)
+STOCK_BIN = (
+    b"date,item_id,qty_open,qty_received,qty_close,waste\n"
+    b"2026-01-01,A,10,5,11,1\n"
+    b"2026-01-01,B,8,0,7,0\n"
+)
+
+
+def test_ingest_uploaded_without_calendar(tmp_db):
+    files = {
+        "items": BytesIO(ITEMS_BIN),
+        "sales": BytesIO(SALES_BIN),
+        "stock": BytesIO(STOCK_BIN),
+    }
+    counts = ingest.ingest_uploaded(tmp_db, files)
+    assert counts["items"] == 2
+    assert counts["sales"] == 2
+    assert counts["stock"] == 2
+    assert "calendar" not in counts
+
+
+def test_ingest_uploaded_with_calendar(tmp_db):
+    files = {
+        "items": BytesIO(ITEMS_BIN),
+        "sales": BytesIO(SALES_BIN),
+        "stock": BytesIO(STOCK_BIN),
+        "calendar": BytesIO(CALENDAR_BIN),
+    }
+    counts = ingest.ingest_uploaded(tmp_db, files)
+    assert counts["calendar"] == 2
+    row = tmp_db.execute("SELECT COUNT(*) AS c FROM calendar").fetchone()
+    assert row["c"] == 2
+
+
+def test_ingest_uploaded_replaces_data(tmp_db):
+    files = {
+        "items": BytesIO(ITEMS_BIN),
+        "sales": BytesIO(SALES_BIN),
+        "stock": BytesIO(STOCK_BIN),
+    }
+    ingest.ingest_uploaded(tmp_db, files)
+    # Re-import with same data — counts should be identical (idempotent)
+    files2 = {
+        "items": BytesIO(ITEMS_BIN),
+        "sales": BytesIO(SALES_BIN),
+        "stock": BytesIO(STOCK_BIN),
+    }
+    counts = ingest.ingest_uploaded(tmp_db, files2)
+    assert counts["items"] == 2
+    row = tmp_db.execute("SELECT COUNT(*) AS c FROM items").fetchone()
+    assert row["c"] == 2
+
+
+def test_ingest_uploaded_unknown_item_raises(tmp_db):
+    bad_sales = b"date,ticket_id,item_id,quantity,unit_price,total\n2026-01-01,T1,ZZZ,1,5.0,5.0\n"
+    files = {
+        "items": BytesIO(ITEMS_BIN),
+        "sales": BytesIO(bad_sales),
+        "stock": BytesIO(STOCK_BIN),
+    }
+    with pytest.raises(ValueError, match="item_id inconnus"):
+        ingest.ingest_uploaded(tmp_db, files)
+
+
+def test_ingest_uploaded_missing_column_raises(tmp_db):
+    bad_items = b"item_id,name,category\nA,Item A,plat\n"
+    files = {
+        "items": BytesIO(bad_items),
+        "sales": BytesIO(SALES_BIN),
+        "stock": BytesIO(STOCK_BIN),
+    }
+    with pytest.raises(ValueError, match="colonnes manquantes"):
+        ingest.ingest_uploaded(tmp_db, files)
