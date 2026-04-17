@@ -1,54 +1,165 @@
 # La Bonne Table
 
-MVP data-analytics pour restaurant indépendant.
+MVP data-analytics pour restaurant independant.
 
-Pipeline : **CSV → SQLite → KPI → recommandations → dashboard Streamlit**.
+Pipeline : **CSV -> SQLite -> KPI -> recommandations -> dashboard Streamlit -> export HTML**.
 
 ## Stack
 
-Python 3.11, pandas, sqlite3 (natif), Streamlit, Plotly, pytest, ruff, uv.
+Python 3.11+, pandas, sqlite3 (natif), Streamlit, Plotly, pytest, ruff, uv.
 
 ## Quickstart
 
 ```bash
-# 1. installer les dépendances
+# 1. Installer les dependances
 uv sync --extra dev
 
-# 2. générer les données simulées (90 jours, 1 restaurant fictif)
+# 2. Generer les donnees simulees (90 jours, 25 produits, 1 restaurant fictif)
 uv run python scripts/seed_data.py
 
-# 3. ingestion CSV -> SQLite (à venir S2)
-# uv run python -m la_bonne_table.ingest
+# 3. Ingerer les CSV dans SQLite
+uv run python -m la_bonne_table.ingest
 
-# 4. lancer le dashboard
+# 4. Lancer le dashboard
 uv run streamlit run src/la_bonne_table/dashboard.py
 ```
+
+Le dashboard est accessible sur `http://localhost:8501`.
+
+## Mode demo
+
+Le seed genere un jeu de donnees realiste avec des signaux plantes :
+
+- **P106 (Tajine)** : ventes en baisse lineaire sur 90 jours
+- **P107 (Ratatouille)** : taux de pertes eleve (~20%)
+- **P108 (Blanquette)** : marge faible (~25%, seuil a 30%)
+- **P109 (Poulet roti)** : ruptures de stock frequentes
+- **Mardis** : CA a ~55% de la moyenne (jour creux)
+- **Lundis** : fermes (visible dans le calendrier)
+
+Ces signaux declenchent automatiquement les 5 regles du moteur de recommandations.
+
+Pour verifier en CLI avant le dashboard :
+
+```bash
+uv run python scripts/show_kpi.py     # affiche les KPI principaux
+uv run python scripts/show_rules.py   # affiche les recommandations
+```
+
+## Flux complet
+
+```
+                    +------------------+
+                    |  CSV (4 fichiers)|
+                    | items, sales,    |
+                    | stock, calendar  |
+                    +--------+---------+
+                             |
+              +--------------+--------------+
+              |                             |
+     CLI: python -m              Dashboard: page Import
+     la_bonne_table.ingest       (upload via navigateur)
+              |                             |
+              +--------------+--------------+
+                             |
+                    +--------v---------+
+                    |     SQLite       |
+                    | la_bonne_table.db|
+                    +--------+---------+
+                             |
+                    +--------v---------+
+                    |   kpi.py         |
+                    | 13 KPI calcules  |
+                    +--------+---------+
+                             |
+                    +--------v---------+
+                    |   rules.py       |
+                    | 5 regles metier  |
+                    +--------+---------+
+                             |
+              +--------------+--------------+
+              |                             |
+     +--------v---------+         +--------v---------+
+     |    Dashboard      |         |   Export HTML    |
+     | 4 pages Streamlit |         | rapport autonome |
+     +-------------------+         +------------------+
+```
+
+### Format des CSV
+
+| Fichier | Colonnes requises |
+|---|---|
+| `items.csv` | `item_id, name, category, unit_cost, sell_price` |
+| `sales.csv` | `date, ticket_id, item_id, quantity, unit_price, total` |
+| `stock.csv` | `date, item_id, qty_open, qty_received, qty_close, waste` |
+| `calendar.csv` | `date, is_open, notes` |
+
+Dates au format `YYYY-MM-DD`. `calendar.csv` est optionnel a l'upload (requis pour la detection des jours creux).
+
+### Pages du dashboard
+
+| Page | Contenu |
+|---|---|
+| **Accueil** | 6 KPI, comparaison 30j, recommandations groupees par priorite, bouton export HTML |
+| **Ventes** | CA journalier, top/flop 5 produits, volume, marge brute par produit |
+| **Stock** | Taux de pertes, pertes par produit, rotation des stocks, ruptures |
+| **Import** | Upload CSV depuis le navigateur, validation, ingestion vers SQLite |
+
+### Export HTML
+
+Depuis la page Accueil, le bouton **Exporter HTML** genere un rapport autonome (CSS inline, pas de dependance externe) contenant :
+
+- KPI principaux
+- Recommandations avec priorite
+- Top 10 produits par CA
+- Marge brute par produit (alerte visuelle sous 30%)
+- Pertes par produit
+
+Le fichier est ouvrable dans n'importe quel navigateur et imprimable en PDF.
 
 ## Structure
 
 ```
 la-bonne-table/
 ├── data/
-│   ├── raw/                # CSV sources (générés ou uploadés)
-│   └── la_bonne_table.db   # SQLite (gitignored)
+│   ├── raw/                    # CSV sources (generes ou uploades)
+│   └── la_bonne_table.db      # SQLite (gitignored)
 ├── scripts/
-│   └── seed_data.py        # génération données simulées
+│   ├── seed_data.py            # generation donnees simulees
+│   ├── show_kpi.py             # verification KPI en CLI
+│   └── show_rules.py           # verification regles en CLI
 ├── src/la_bonne_table/
-│   ├── db.py               # connexion + schéma SQLite
-│   ├── ingest.py           # CSV -> DB
-│   ├── kpi.py              # calcul des KPI
-│   ├── rules.py            # moteur de recommandations
-│   └── dashboard.py        # UI Streamlit
+│   ├── db.py                   # connexion + schema SQLite
+│   ├── ingest.py               # CSV -> DB (CLI + upload)
+│   ├── kpi.py                  # 13 KPI (fonctions pures sur sqlite3)
+│   ├── rules.py                # 5 regles metier -> recommandations
+│   ├── report.py               # generation rapport HTML
+│   └── dashboard.py            # UI Streamlit (4 pages)
 └── tests/
+    ├── conftest.py             # fixture tmp_db
+    ├── test_ingest.py          # 15 tests ingestion
+    ├── test_kpi.py             # 19 tests KPI
+    ├── test_rules.py           # 13 tests regles
+    └── test_report.py          # 6 tests export
 ```
 
-## Roadmap
+## Developpement
 
-- **S1** socle projet + données simulées
-- **S2** ingestion CSV + SQLite
-- **S3** KPI (CA, panier moyen, top/flop, marge, waste, rotation)
-- **S4** moteur de règles (5 règles)
-- **S5** dashboard Streamlit
-- **S6** polish + export
+```bash
+uv run pytest                  # 53 tests
+uv run ruff check .            # lint
+uv run ruff check --fix .      # lint + autofix
+```
 
-Voir `CLAUDE.md` pour les règles de dev et le backlog V2.
+## Sessions realisees
+
+| Session | Contenu |
+|---|---|
+| S1 | Socle projet, schema SQLite, seed data |
+| S2 | Ingestion CSV -> SQLite avec validation |
+| S3 | 13 KPI (CA, panier moyen, marge, pertes, rotation, comparaison 30j) |
+| S4 | Moteur de regles (5 regles, 4 niveaux de priorite) |
+| S5 | Dashboard Streamlit (3 pages) |
+| S6 | Polish UX dashboard |
+| S7 | Upload CSV depuis le dashboard |
+| S8 | Export rapport HTML, nettoyage deprecations Streamlit |
