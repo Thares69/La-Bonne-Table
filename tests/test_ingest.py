@@ -230,3 +230,25 @@ def test_ingest_uploaded_missing_column_raises(tmp_db):
     }
     with pytest.raises(ValueError, match="colonnes manquantes"):
         ingest.ingest_uploaded(tmp_db, files)
+
+
+def test_ingest_uploaded_sets_metadata_user(tmp_db):
+    from la_bonne_table.db import get_metadata
+
+    files = {
+        "items": BytesIO(ITEMS_BIN),
+        "sales": BytesIO(SALES_BIN),
+        "stock": BytesIO(STOCK_BIN),
+    }
+    ingest.ingest_uploaded(tmp_db, files)
+    assert get_metadata(tmp_db, "dataset_type") == "user"
+
+
+def test_metadata_helpers(tmp_db):
+    from la_bonne_table.db import get_metadata, set_metadata
+
+    assert get_metadata(tmp_db, "foo") is None
+    set_metadata(tmp_db, "foo", "bar")
+    assert get_metadata(tmp_db, "foo") == "bar"
+    set_metadata(tmp_db, "foo", "baz")
+    assert get_metadata(tmp_db, "foo") == "baz"

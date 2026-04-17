@@ -17,7 +17,7 @@ from typing import BinaryIO
 
 import pandas as pd
 
-from la_bonne_table.db import DB_PATH, connect, init_schema
+from la_bonne_table.db import DB_PATH, connect, init_schema, set_metadata
 
 RAW_DIR = Path(__file__).resolve().parents[2] / "data" / "raw"
 
@@ -205,6 +205,7 @@ def ingest_uploaded(
         counts["calendar"] = load_calendar(conn, files["calendar"], "calendar.csv")
     counts["sales"] = load_sales(conn, files["sales"], "sales.csv")
     counts["stock"] = load_stock(conn, files["stock"], "stock.csv")
+    set_metadata(conn, "dataset_type", "user")
     return counts
 
 

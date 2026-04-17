@@ -1,10 +1,12 @@
 """Dashboard Streamlit V1 — La Bonne Table.
 
-3 pages : Accueil (KPI + recommandations), Ventes (graphes), Stock (pertes + rotation).
+4 pages : Accueil (KPI + recommandations), Ventes (graphes), Stock (pertes + rotation),
+Import (upload CSV + mode démo).
 Aucune logique métier ici — tout est délégué à kpi.py et rules.py.
 """
 from __future__ import annotations
 
+import tempfile
 from datetime import date
 from pathlib import Path
 
@@ -12,8 +14,8 @@ import plotly.express as px
 import streamlit as st
 
 from la_bonne_table import kpi, rules
-from la_bonne_table.db import DB_PATH, connect, init_schema
-from la_bonne_table.ingest import ingest_uploaded
+from la_bonne_table.db import DB_PATH, connect, get_metadata, init_schema, set_metadata
+from la_bonne_table.ingest import ingest_all, ingest_uploaded
 from la_bonne_table.report import generate_html_report
 
 # ---------------------------------------------------------------------------
@@ -97,9 +99,16 @@ def _bar_h(df, x, y, color=None, height=None):
 # ---------------------------------------------------------------------------
 
 
+def _is_demo(conn) -> bool:
+    return get_metadata(conn, "dataset_type") == "demo"
+
+
 def render_sidebar(conn):
     st.sidebar.markdown("### La Bonne Table")
     st.sidebar.caption("Tableau de bord restaurant")
+
+    if _is_demo(conn):
+        st.sidebar.info("**DEMO** — Donnees simulees")
 
     page = st.sidebar.radio(
         "Navigation",
@@ -392,19 +401,91 @@ def render_stock(conn, start, end):
 # ---------------------------------------------------------------------------
 
 
-def render_import():
-    st.header("Import de données")
-    st.caption("Charger un jeu de fichiers CSV pour alimenter la base")
+def _load_demo():
+    """Generate demo CSVs to a temp dir and ingest them."""
+    import importlib.util
 
+    script = Path(__file__).resolve().parents[2] / "scripts" / "seed_data.py"
+    spec = importlib.util.spec_from_file_location("seed_data", script)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        mod.generate_demo_csvs(Path(tmp))
+        ingest_all(Path(tmp), DB_PATH)
+    conn = connect()
+    set_metadata(conn, "dataset_type", "demo")
+    conn.close()
+
+
+def _reset_db():
+    """Delete the database file."""
+    Path(DB_PATH).unlink(missing_ok=True)
+
+
+def render_import():
+    st.header("Import de donnees")
+    st.caption("Charger un jeu de fichiers CSV ou lancer la demo")
+
+    # --- Feedback from previous action ---
     if "import_counts" in st.session_state:
         counts = st.session_state.pop("import_counts")
-        st.success("Import réussi !")
+        st.success("Import reussi !")
         cols = st.columns(len(counts))
         for col, (table, n) in zip(cols, counts.items(), strict=False):
             col.metric(table, f"{n} lignes")
         st.divider()
 
-    st.warning("L'import remplace intégralement les données existantes.")
+    if "demo_loaded" in st.session_state:
+        st.session_state.pop("demo_loaded")
+        st.success("Donnees de demonstration chargees. Va sur **Accueil** pour explorer.")
+        st.divider()
+
+    if "db_reset" in st.session_state:
+        st.session_state.pop("db_reset")
+        st.success("Base reinitialisee.")
+        st.divider()
+
+    # --- Demo + Reset ---
+    col_demo, col_reset = st.columns(2)
+    with col_demo:
+        st.markdown("**Mode demo**")
+        st.caption("Charge 90 jours de donnees simulees avec des signaux plantes.")
+        if st.button("Charger la demo", type="primary"):
+            with st.spinner("Generation et import..."):
+                _load_demo()
+            st.session_state["demo_loaded"] = True
+            st.rerun()
+
+    with col_reset:
+        st.markdown("**Reinitialiser**")
+        st.caption("Supprime toutes les donnees pour repartir de zero.")
+        if st.button("Reinitialiser la base"):
+            _reset_db()
+            st.session_state["db_reset"] = True
+            st.rerun()
+
+    # --- Help ---
+    with st.expander("Parcours de demo"):
+        st.markdown(
+            "1. Clique sur **Charger la demo** ci-dessus\n"
+            "2. Va sur **Accueil** : 6 KPI + recommandations\n"
+            "3. Va sur **Ventes** : courbe CA, top/flop, marges\n"
+            "4. Va sur **Stock** : pertes, rotation, ruptures\n"
+            "5. Reviens sur **Accueil** et clique **Exporter HTML**\n"
+            "\n"
+            "Signaux plantes dans la demo :\n"
+            "- Poisson du jour : pertes ~20% (alerte critique)\n"
+            "- Tajine agneau : ventes en baisse -36%\n"
+            "- Pizza margherita : marge faible ~25%\n"
+            "- Mardis : CA a 40% de la moyenne (jour creux)\n"
+        )
+
+    st.divider()
+
+    # --- Manual CSV upload ---
+    st.subheader("Import manuel")
+    st.warning("L'import remplace integralement les donnees existantes.")
 
     col1, col2 = st.columns(2)
     with col1:
@@ -426,7 +507,7 @@ def render_import():
         )
         return
 
-    if st.button("Lancer l'import", type="primary"):
+    if st.button("Lancer l'import", type="primary", key="btn_import"):
         files: dict = {k: v for k, v in required.items()}
         if calendar_file:
             files["calendar"] = calendar_file
@@ -453,7 +534,10 @@ def main():
     if conn is None:
         st.sidebar.markdown("### La Bonne Table")
         st.sidebar.caption("Tableau de bord restaurant")
-        st.sidebar.radio("Navigation", ["Import"], label_visibility="collapsed")
+        st.sidebar.radio(
+            "Navigation", ["Import"], label_visibility="collapsed",
+        )
+        st.sidebar.caption("Aucune base detectee. Charge la demo ou importe tes CSV.")
         render_import()
         return
 

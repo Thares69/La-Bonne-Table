@@ -192,7 +192,8 @@ def write_csv(path: Path, rows: list[dict], fieldnames: list[str]) -> None:
         writer.writerows(rows)
 
 
-def main() -> None:
+def generate_demo_csvs(output_dir: Path) -> dict[str, int]:
+    """Generate demo CSV files in *output_dir*. Returns row counts per table."""
     rng = random.Random(SEED)
     np_rng = np.random.default_rng(SEED)
 
@@ -208,7 +209,7 @@ def main() -> None:
         for it in ITEMS
     ]
     write_csv(
-        RAW_DIR / "items.csv",
+        output_dir / "items.csv",
         items_rows,
         ["item_id", "name", "category", "unit_cost", "sell_price"],
     )
@@ -216,46 +217,53 @@ def main() -> None:
     # calendar.csv
     calendar = build_calendar(rng)
     write_csv(
-        RAW_DIR / "calendar.csv",
+        output_dir / "calendar.csv",
         [{"date": d.isoformat(), "is_open": int(op), "notes": nt} for d, op, nt in calendar],
         ["date", "is_open", "notes"],
     )
 
     # sales.csv
-    open_days = [d for d, op, _ in calendar if op]
     sales_rows: list[dict] = []
     for idx, (d, op, _) in enumerate(calendar):
         if not op:
             continue
         sales_rows.extend(simulate_day_sales(d, idx, rng, np_rng))
     write_csv(
-        RAW_DIR / "sales.csv",
+        output_dir / "sales.csv",
         sales_rows,
         ["date", "ticket_id", "item_id", "quantity", "unit_price", "total"],
     )
 
-    # stock.csv (nécessite les ventes agrégées par jour/item)
+    # stock.csv
+    open_days = [d for d, op, _ in calendar if op]
     sales_by_day_item: dict[tuple[str, str], int] = {}
     for r in sales_rows:
         key = (r["date"], r["item_id"])
         sales_by_day_item[key] = sales_by_day_item.get(key, 0) + r["quantity"]
     stock_rows = simulate_stock(open_days, sales_by_day_item, rng, np_rng)
     write_csv(
-        RAW_DIR / "stock.csv",
+        output_dir / "stock.csv",
         stock_rows,
         ["date", "item_id", "qty_open", "qty_received", "qty_close", "waste"],
     )
 
-    # Résumé
-    total_revenue = sum(r["total"] for r in sales_rows)
-    total_tickets = len({r["ticket_id"] for r in sales_rows})
+    return {
+        "items": len(items_rows),
+        "calendar": len(calendar),
+        "sales": len(sales_rows),
+        "stock": len(stock_rows),
+    }
+
+
+def main() -> None:
+    counts = generate_demo_csvs(RAW_DIR)
+    open_days = counts["calendar"] - 13  # lundis + fériés
+    total_sales = counts["sales"]
     print(f"Période : {START_DATE} -> {END_DATE} ({DAYS} jours)")
-    print(f"Jours ouverts : {len(open_days)} / {DAYS}")
-    print(f"Items : {len(ITEMS)}")
-    print(f"Tickets : {total_tickets}")
-    print(f"Lignes de vente : {len(sales_rows)}")
-    print(f"Lignes de stock : {len(stock_rows)}")
-    print(f"CA total simulé : {total_revenue:,.2f} €")
+    print(f"Jours ouverts : {open_days} / {DAYS}")
+    print(f"Items : {counts['items']}")
+    print(f"Lignes de vente : {total_sales}")
+    print(f"Lignes de stock : {counts['stock']}")
     print(f"CSV écrits dans : {RAW_DIR}")
 
 
