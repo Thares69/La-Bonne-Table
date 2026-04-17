@@ -30,14 +30,13 @@ Le dashboard est accessible sur `http://localhost:8501`.
 
 Le seed genere un jeu de donnees realiste avec des signaux plantes :
 
-- **P106 (Tajine)** : ventes en baisse lineaire sur 90 jours
-- **P107 (Ratatouille)** : taux de pertes eleve (~20%)
-- **P108 (Blanquette)** : marge faible (~25%, seuil a 30%)
-- **P109 (Poulet roti)** : ruptures de stock frequentes
-- **Mardis** : CA a ~55% de la moyenne (jour creux)
+- **P107 (Poisson du jour)** : taux de pertes eleve (~20%) → regle `excessive_waste`
+- **P106 (Tajine agneau)** : ventes en baisse (-36%) → regle `declining_item`
+- **P108 (Pizza margherita)** : marge faible (~25%, seuil a 30%) → regle `low_margin`
+- **Mardis** : CA a ~40% de la moyenne → regle `slow_weekday`
 - **Lundis** : fermes (visible dans le calendrier)
 
-Ces signaux declenchent automatiquement les 5 regles du moteur de recommandations.
+Les 4 signaux plantes + 1 pattern naturel (Burger classique en baisse) declenchent 5 recommandations au total.
 
 Pour verifier en CLI avant le dashboard :
 
