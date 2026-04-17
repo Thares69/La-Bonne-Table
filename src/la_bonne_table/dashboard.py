@@ -14,6 +14,7 @@ import streamlit as st
 from la_bonne_table import kpi, rules
 from la_bonne_table.db import DB_PATH, connect, init_schema
 from la_bonne_table.ingest import ingest_uploaded
+from la_bonne_table.report import generate_html_report
 
 # ---------------------------------------------------------------------------
 # Config
@@ -137,8 +138,18 @@ def render_sidebar(conn):
 
 
 def render_home(conn, start, end):
-    st.header("Vue d'ensemble")
-    st.caption("Indicateurs cl\u00e9s et alertes sur la p\u00e9riode s\u00e9lectionn\u00e9e")
+    col_title, col_export = st.columns([4, 1])
+    with col_title:
+        st.header("Vue d'ensemble")
+        st.caption("Indicateurs cl\u00e9s et alertes sur la p\u00e9riode s\u00e9lectionn\u00e9e")
+    with col_export:
+        html = generate_html_report(conn, start, end)
+        st.download_button(
+            "Exporter HTML",
+            data=html,
+            file_name=f"rapport_{start}_{end}.html",
+            mime="text/html",
+        )
 
     # --- KPI : performance ---
     rev = kpi.revenue_total(conn, start, end)
@@ -236,7 +247,7 @@ def render_sales(conn, start, end):
         labels={"date": "", "revenue": "CA (\u20ac)"},
     )
     fig.update_layout(margin={"l": 0, "r": 0, "t": 5, "b": 0})
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     # --- Top / Flop ---
     st.subheader("Classement des produits")
@@ -247,7 +258,7 @@ def render_sales(conn, start, end):
         top = kpi.top_items_by_revenue(conn, n=5, start=start, end=end)
         st.plotly_chart(
             _bar_h(top, x="revenue", y="name", color="category"),
-            use_container_width=True,
+            width="stretch",
         )
 
     with col_right:
@@ -255,7 +266,7 @@ def render_sales(conn, start, end):
         flop = kpi.flop_items_by_revenue(conn, n=5, start=start, end=end)
         st.plotly_chart(
             _bar_h(flop, x="revenue", y="name", color="category"),
-            use_container_width=True,
+            width="stretch",
         )
 
     col_vol, col_margin = st.columns(2)
@@ -264,7 +275,7 @@ def render_sales(conn, start, end):
         vol = kpi.top_items_by_volume(conn, n=5, start=start, end=end)
         st.plotly_chart(
             _bar_h(vol, x="qty", y="name", color="category"),
-            use_container_width=True,
+            width="stretch",
         )
 
     # --- Marge par item ---
@@ -291,7 +302,7 @@ def render_sales(conn, start, end):
             margin={"l": 0, "r": 0, "t": 5, "b": 0},
             height=max(400, len(margin_df) * 22 + 60),
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
 
 # ---------------------------------------------------------------------------
@@ -335,7 +346,7 @@ def render_stock(conn, start, end):
             margin={"l": 0, "r": 0, "t": 5, "b": 0},
             height=max(300, len(wdf_plot) * 28 + 60),
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     else:
         st.success("Aucune perte enregistr\u00e9e sur la p\u00e9riode.")
 
@@ -350,7 +361,7 @@ def render_stock(conn, start, end):
         if not rot_low.empty:
             st.plotly_chart(
                 _bar_h(rot_low, x="rotation", y="name", color="category"),
-                use_container_width=True,
+                width="stretch",
             )
 
     # --- Ruptures ---
@@ -371,7 +382,7 @@ def render_stock(conn, start, end):
                         "total_days": "Jours mesur\u00e9s",
                     }
                 ),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
 
