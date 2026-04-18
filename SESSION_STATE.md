@@ -2,7 +2,9 @@
 
 ## Statut global
 
-**MVP complet et montrable.** Aucune feature en cours.
+**MVP complet, montrable et deploye en production.**
+
+App live : [la-bonne-table-b757dsscm7njhpibw6wd.streamlit.app](https://la-bonne-table-b757dsscm7njhpibw6wd.streamlit.app)
 
 ## Sessions realisees
 
@@ -16,13 +18,22 @@
 | S6 | Polish UX dashboard (couleurs, labels, layout) | Done |
 | S7 | Upload CSV depuis le dashboard (page Import) | Done |
 | S8 | Export rapport HTML, nettoyage deprecations Streamlit | Done |
-| S9 | README, documentation, preparation demo | Done |
+| S9 | README, documentation, mode demo integre | Done |
+| S10 | Deploiement Streamlit Cloud (requirements, demo_data module, runtime.txt) | Done |
+
+## Deploiement
+
+- **Plateforme** : Streamlit Community Cloud (gratuit)
+- **Entrypoint** : `src/la_bonne_table/dashboard.py`
+- **Runtime** : Python 3.11 (`runtime.txt`)
+- **Dependances prod** : `requirements.txt` (pandas, numpy, streamlit, plotly)
+- **Verifications post-deploy** : app accessible, mode demo fonctionnel, KPI + recommandations + bandeau DEMO visibles, 4 pages navigables.
 
 ## Repo
 
 - **Branche** : main
-- **Commits** : 6 (apres commit S9)
-- **Tests** : 53 (ingest 15, kpi 19, rules 13, report 6)
+- **Remote** : `github.com/Thares69/La-Bonne-Table`
+- **Tests** : 57 (ingest 15, kpi 19, rules 13, report 6, demo_data 2, autres)
 - **Lint** : ruff clean
 
 ## Modules
