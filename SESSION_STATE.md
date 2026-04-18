@@ -19,21 +19,34 @@ App live : [la-bonne-table-b757dsscm7njhpibw6wd.streamlit.app](https://la-bonne-
 | S7 | Upload CSV depuis le dashboard (page Import) | Done |
 | S8 | Export rapport HTML, nettoyage deprecations Streamlit | Done |
 | S9 | README, documentation, mode demo integre | Done |
-| S10 | Deploiement Streamlit Cloud (requirements, demo_data module, runtime.txt) | Done |
+| S10a | Deploiement Streamlit Cloud (requirements, demo_data module, runtime.txt) | Done |
+| S10b | Copilote IA de synthese (sous-package `ai/`, Claude Haiku, fallback) | Done |
 
 ## Deploiement
 
 - **Plateforme** : Streamlit Community Cloud (gratuit)
 - **Entrypoint** : `src/la_bonne_table/dashboard.py`
 - **Runtime** : Python 3.11 (`runtime.txt`)
-- **Dependances prod** : `requirements.txt` (pandas, numpy, streamlit, plotly)
+- **Dependances prod** : `requirements.txt` (pandas, numpy, streamlit, plotly, anthropic)
 - **Verifications post-deploy** : app accessible, mode demo fonctionnel, KPI + recommandations + bandeau DEMO visibles, 4 pages navigables.
+- **Secret a configurer (optionnel)** : `ANTHROPIC_API_KEY` via **App settings -> Secrets** pour activer la synthese IA ; sans cle, fallback deterministe.
+
+## Copilote IA
+
+Sous-package `src/la_bonne_table/ai/` — greffe non intrusive sur le moteur deterministe.
+
+- **context.py** : KPI + recos -> contexte JSON serialisable (aucune donnee brute).
+- **provider.py** : client Anthropic, detection cle via `st.secrets` puis `os.environ`.
+- **summary.py** : synthese dirigeant en 5 sections fixes (resume / alertes / opportunites / plan d'action / limites). Fallback deterministe sans cle.
+- **Modele par defaut** : `claude-haiku-4-5-20251001` (rapide, peu cher).
+- **Cache** : `@st.cache_data(ttl=3600)` sur le contexte JSON — pas de brulage inutile de tokens.
+- **Anti-hallucination** : system prompt strict « utilise uniquement les chiffres fournis », temperature 0.2, contexte borne aux agregats.
 
 ## Repo
 
 - **Branche** : main
 - **Remote** : `github.com/Thares69/La-Bonne-Table`
-- **Tests** : 57 (ingest 15, kpi 19, rules 13, report 6, demo_data 2, autres)
+- **Tests** : 69 (ingest 15, kpi 19, rules 13, report 6, demo_data 2, ai 12, autres)
 - **Lint** : ruff clean
 
 ## Modules

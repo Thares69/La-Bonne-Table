@@ -2,7 +2,7 @@
 
 MVP data-analytics pour restaurant independant.
 
-Pipeline : **CSV -> SQLite -> KPI -> recommandations -> dashboard Streamlit -> export HTML**.
+Pipeline : **CSV -> SQLite -> KPI -> recommandations deterministes -> synthese IA -> dashboard Streamlit -> export HTML**.
 
 ## Demo en ligne
 
@@ -110,6 +110,19 @@ Dates au format `YYYY-MM-DD`. `calendar.csv` est optionnel a l'upload (requis po
 | **Stock** | Taux de pertes, pertes par produit, rotation des stocks, ruptures |
 | **Import** | Upload CSV depuis le navigateur, validation, ingestion vers SQLite |
 
+### Synthese IA (copilote)
+
+Section **Synthese IA** sur la page Accueil : un resume dirigeant structure en 5 blocs (resume, alertes prioritaires, opportunites, plan d'action, limites). Le contenu est genere par Claude Haiku 4.5 a partir d'un contexte compose uniquement des KPI et recommandations deja calcules — **aucune invention, aucune donnee brute envoyee au LLM**.
+
+**Configuration** :
+
+- Locale : exporter `ANTHROPIC_API_KEY` dans l'environnement ou l'ajouter a `.streamlit/secrets.toml`.
+- Streamlit Cloud : definir la cle via **App settings -> Secrets** (format TOML : `ANTHROPIC_API_KEY = "sk-..."`).
+
+**Fallback** : sans cle, la section affiche une synthese deterministe generee depuis les memes donnees — l'app reste fonctionnelle, clairement labellisee « Mode deterministe ».
+
+Le resultat est cache 1h (`@st.cache_data`) ; un bouton **Regenerer** force le recalcul.
+
 ### Export HTML
 
 Depuis la page Accueil, le bouton **Exporter HTML** genere un rapport autonome (CSS inline, pas de dependance externe) contenant :
@@ -153,19 +166,26 @@ la-bonne-table/
 │   ├── kpi.py                  # 13 KPI (fonctions pures sur sqlite3)
 │   ├── rules.py                # 5 regles metier -> recommandations
 │   ├── report.py               # generation rapport HTML
-│   └── dashboard.py            # UI Streamlit (4 pages)
+│   ├── demo_data.py            # generation du dataset de demo
+│   ├── dashboard.py            # UI Streamlit (4 pages)
+│   └── ai/
+│       ├── context.py          # KPI + recos -> contexte structure
+│       ├── provider.py         # client Claude + detection cle API
+│       └── summary.py          # synthese dirigeant (LLM + fallback)
 └── tests/
     ├── conftest.py             # fixture tmp_db
     ├── test_ingest.py          # 15 tests ingestion
     ├── test_kpi.py             # 19 tests KPI
     ├── test_rules.py           # 13 tests regles
-    └── test_report.py          # 6 tests export
+    ├── test_report.py          # 6 tests export
+    ├── test_demo_data.py       # 2 tests demo data
+    └── test_ai.py              # 12 tests copilote IA
 ```
 
 ## Developpement
 
 ```bash
-uv run pytest                  # 53 tests
+uv run pytest                  # 69 tests
 uv run ruff check .            # lint
 uv run ruff check --fix .      # lint + autofix
 ```
@@ -182,3 +202,5 @@ uv run ruff check --fix .      # lint + autofix
 | S6 | Polish UX dashboard |
 | S7 | Upload CSV depuis le dashboard |
 | S8 | Export rapport HTML, nettoyage deprecations Streamlit |
+| S9 | Mode demo integre, deploiement Streamlit Cloud |
+| S10 | Copilote IA : synthese dirigeant avec fallback deterministe |

@@ -6,6 +6,7 @@ Aucune logique métier ici — tout est délégué à kpi.py et rules.py.
 """
 from __future__ import annotations
 
+import json
 import tempfile
 from datetime import date
 from pathlib import Path
@@ -14,6 +15,9 @@ import plotly.express as px
 import streamlit as st
 
 from la_bonne_table import kpi, rules
+from la_bonne_table.ai import provider as ai_provider
+from la_bonne_table.ai import summary as ai_summary
+from la_bonne_table.ai.context import build_context
 from la_bonne_table.db import DB_PATH, connect, get_metadata, init_schema, set_metadata
 from la_bonne_table.demo_data import generate_demo_csvs
 from la_bonne_table.ingest import ingest_all, ingest_uploaded
@@ -143,6 +147,43 @@ def render_sidebar(conn):
 
 
 # ---------------------------------------------------------------------------
+# Synthese IA
+# ---------------------------------------------------------------------------
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _cached_summary(context_json: str) -> dict:
+    """Cache key = serialisation JSON du contexte. Hit tant que les KPI sont identiques."""
+    context = json.loads(context_json)
+    result = ai_summary.generate_summary(context)
+    return {"text": result.text, "is_ai": result.is_ai, "model": result.model}
+
+
+def _render_ai_summary(conn, start, end):
+    header_col, btn_col = st.columns([4, 1])
+    with header_col:
+        st.subheader("Synth\u00e8se IA")
+    with btn_col:
+        if st.button("Regenerer", key="ai_regen"):
+            _cached_summary.clear()
+
+    context = build_context(conn, start, end)
+    context_json = json.dumps(context, ensure_ascii=False, sort_keys=True)
+
+    with st.spinner("Generation de la synthese..."):
+        result = _cached_summary(context_json)
+
+    if result["is_ai"]:
+        st.caption(f"Generee par {result['model']}")
+    elif ai_provider.is_available():
+        st.warning("IA indisponible, synthese deterministe affichee.")
+    else:
+        st.caption("Mode deterministe (ANTHROPIC_API_KEY non configuree).")
+
+    st.markdown(result["text"])
+
+
+# ---------------------------------------------------------------------------
 # Page : Accueil
 # ---------------------------------------------------------------------------
 
@@ -187,6 +228,10 @@ def render_home(conn, start, end):
         f"{days['closed']} ferm\u00e9(s)",
         delta_color="off",
     )
+
+    # --- Synthese IA ---
+    st.divider()
+    _render_ai_summary(conn, start, end)
 
     # --- Recommandations ---
     st.divider()

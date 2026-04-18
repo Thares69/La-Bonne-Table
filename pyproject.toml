@@ -8,6 +8,7 @@ dependencies = [
     "numpy>=1.26",
     "streamlit>=1.36",
     "plotly>=5.22",
+    "anthropic>=0.40",
 ]
 
 [project.optional-dependencies]
