@@ -15,6 +15,7 @@ import streamlit as st
 
 from la_bonne_table import kpi, rules
 from la_bonne_table.db import DB_PATH, connect, get_metadata, init_schema, set_metadata
+from la_bonne_table.demo_data import generate_demo_csvs
 from la_bonne_table.ingest import ingest_all, ingest_uploaded
 from la_bonne_table.report import generate_html_report
 
@@ -403,15 +404,8 @@ def render_stock(conn, start, end):
 
 def _load_demo():
     """Generate demo CSVs to a temp dir and ingest them."""
-    import importlib.util
-
-    script = Path(__file__).resolve().parents[2] / "scripts" / "seed_data.py"
-    spec = importlib.util.spec_from_file_location("seed_data", script)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-
     with tempfile.TemporaryDirectory() as tmp:
-        mod.generate_demo_csvs(Path(tmp))
+        generate_demo_csvs(Path(tmp))
         ingest_all(Path(tmp), DB_PATH)
     conn = connect()
     set_metadata(conn, "dataset_type", "demo")
